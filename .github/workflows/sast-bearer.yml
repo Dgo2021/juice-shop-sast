@@ -1,0 +1,51 @@
+name: SAST Bearer                                   # Nombre del workflow que aparece en la pestaña Actions
+
+on:                                                 # Eventos que disparan el pipeline
+  push:                                             # Se ejecuta al hacer push...
+    branches: [ main ]                              # ...solo sobre la rama main
+  pull_request:                                     # Se ejecuta al abrir/actualizar un Pull Request...
+    branches: [ main ]                              # ...cuyo destino sea la rama main
+  workflow_dispatch:                                # Permite ejecutarlo manualmente desde la pestaña Actions
+
+permissions:                                        # Permisos mínimos del GITHUB_TOKEN
+  contents: read                                    # Solo lectura del código del repositorio
+  security-events: write                            # Escritura de alertas en Security > Code scanning
+
+jobs:                                               # Lista de trabajos del pipeline
+  bearer:                                           # Identificador del trabajo
+    name: Análisis SAST con Bearer                  # Nombre visible del trabajo
+    runs-on: ubuntu-latest                          # Máquina virtual Linux donde se ejecuta
+    steps:                                          # Pasos que ejecuta el trabajo, en orden
+      - name: Descargar el código                   # Paso 1: checkout del repositorio
+        uses: actions/checkout@v4                   # Acción oficial que clona el repo en el runner
+
+      - name: Bearer - reporte SARIF                # Paso 2: escaneo de todo el repo en formato SARIF
+        uses: bearer/bearer-action@v2               # Acción oficial de Bearer CLI
+        with:                                       # Parámetros de la acción
+          path: .                                   # Escanea todo el repositorio
+          format: sarif                             # Formato compatible con GitHub Code scanning
+          output: bearer.sarif                      # Archivo donde se guarda el reporte SARIF
+          exit-code: 0                              # Devuelve 0 aunque haya hallazgos para no cortar el pipeline
+
+      - name: Subir SARIF a Code scanning           # Paso 3: publica los hallazgos en Security > Code scanning
+        if: always()                                # Se ejecuta siempre, aunque un paso anterior falle
+        uses: github/codeql-action/upload-sarif@v3  # Acción oficial de GitHub para cargar archivos SARIF
+        with:                                       # Parámetros de la acción
+          sarif_file: bearer.sarif                  # Ruta del reporte SARIF generado por Bearer
+          category: bearer                          # Categoría para identificar la herramienta en las alertas
+
+      - name: Bearer - reporte HTML                 # Paso 4: segundo escaneo con reporte legible en HTML
+        if: always()                                # Se ejecuta siempre, aunque haya hallazgos
+        uses: bearer/bearer-action@v2               # Acción oficial de Bearer CLI
+        with:                                       # Parámetros de la acción
+          path: .                                   # Escanea todo el repositorio
+          format: html                              # Reporte en formato HTML
+          output: bearer-report.html                # Archivo donde se guarda el reporte HTML
+          exit-code: 0                              # No marca el paso como fallido por los hallazgos
+
+      - name: Guardar reporte HTML como artefacto   # Paso 5: deja el HTML descargable en la ejecución
+        if: always()                                # Se ejecuta siempre para no perder el reporte
+        uses: actions/upload-artifact@v4            # Acción oficial para subir artefactos
+        with:                                       # Parámetros de la acción
+          name: bearer-report-html                  # Nombre del artefacto descargable
+          path: bearer-report.html                  # Archivo que se sube como artefacto
